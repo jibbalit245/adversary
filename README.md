@@ -19,15 +19,12 @@ adversary/
 │   └── format_data.py           # Convert all sources → ChatML training samples
 ├── train/
 │   ├── train_qlora.py           # QLoRA training script (rank 32, alpha 64, 4-bit)
-│   └── accelerate_config.yaml   # Accelerate multi-GPU config (auto-detects GPU count)
+│   └── accelerate_config.yaml   # Accelerate config (uses all available GPUs)
 ├── eval/
 │   └── evaluate_adversary.py    # Evaluate on 20 sample claims (specificity/relevance/depth)
 ├── export/
 │   └── export_adapter.py        # Save/export LoRA adapter for inference loading
-├── scripts/
-│   ├── launch_single_gpu.sh     # Single-GPU debug launch
-│   └── launch_multi_gpu.sh      # Multi-GPU production launch (accelerate)
-├── deploy.sh                    # Full deployment: venv → pip → GPU check → dry-run → train
+├── deploy.sh                    # Launch script: venv → pip install → train
 └── requirements.txt
 ```
 
@@ -35,21 +32,18 @@ adversary/
 
 ## Quick Start
 
-### 1 — Deploy (recommended for RunPod / Lambda Labs)
+### Launch (recommended)
 
 ```bash
-bash deploy.sh              # full pipeline: install → verify → train
-bash deploy.sh --dry-run-only  # install + GPU check + 5-step verification only
+bash deploy.sh
 ```
 
-`deploy.sh` automatically:
-- Creates a `venv/`
-- Installs all dependencies
-- Detects available GPUs (`torch.cuda.device_count()` — no hardcoded count)
-- Runs a 5-step dry-run to catch config errors before downloading the full model
-- Launches single-GPU or multi-GPU training as appropriate
+`deploy.sh`:
+1. Creates a `venv/`
+2. Installs all dependencies from `requirements.txt`
+3. Launches training via `accelerate launch` on whatever GPUs are present
 
-### 2 — Manual setup
+### Manual setup
 
 ```bash
 python3 -m venv venv && source venv/bin/activate
@@ -79,31 +73,23 @@ python data/format_data.py           # → data/processed/train.jsonl + eval.jso
 
 ## Training
 
-### Single-GPU (debug / dry-run)
+### Via launch script
 
 ```bash
-bash scripts/launch_single_gpu.sh           # 5-step dry-run (default)
-bash scripts/launch_single_gpu.sh --full    # full training on GPU 0
+bash deploy.sh
 ```
 
-### Multi-GPU (production)
+### Direct invocation
 
 ```bash
-bash scripts/launch_multi_gpu.sh
-```
+# Single process
+python train/train_qlora.py
 
-GPU count is auto-detected at runtime. Override with:
+# Multi-GPU via accelerate
+accelerate launch --config_file train/accelerate_config.yaml train/train_qlora.py
 
-```bash
-CUDA_VISIBLE_DEVICES=0,1,2,3 bash scripts/launch_multi_gpu.sh
-```
-
-### Direct Python invocation
-
-```bash
-python train/train_qlora.py --dry-run           # 5-step verification
-python train/train_qlora.py                     # full training, single process
-python train/train_qlora.py --help              # all options
+# All CLI options
+python train/train_qlora.py --help
 ```
 
 ---
@@ -174,5 +160,5 @@ model = PeftModel.from_pretrained(base, "export/adversary-adapter")
 
 - Python 3.11+
 - CUDA 12.4+
-- NVIDIA GPU (1× for debug; 4+ GPUs with 48GB+ VRAM recommended for <2h training)
+- NVIDIA GPU (1× or more; 4+ GPUs with 48GB+ VRAM recommended for <2h training)
 - See `requirements.txt` for Python packages

@@ -7,13 +7,13 @@ Configuration:
   - 4-bit NF4 quantization via bitsandbytes
   - LoRA rank 32, alpha 64, targeting all attention + MLP projection layers
   - Loss computed ONLY on assistant turns (ChatML <|im_start|>assistant tokens)
-  - Multi-GPU via Accelerate (no hardcoded GPU count — auto-detected)
+  - Multi-GPU via Accelerate (handled by the launcher — pass no extra flags)
 
-Usage (see launch scripts for recommended invocations):
-    # Single GPU debug
-    python train/train_qlora.py --dry-run
+Usage:
+    # Direct (single-process):
+    python train/train_qlora.py
 
-    # Multi-GPU via accelerate
+    # Multi-GPU via accelerate (recommended):
     accelerate launch --config_file train/accelerate_config.yaml \\
         train/train_qlora.py
 """
@@ -35,7 +35,7 @@ from transformers import (
 )
 
 # ---------------------------------------------------------------------------
-# Defaults — override via CLI flags or environment variables
+# Defaults — override via CLI flags
 # ---------------------------------------------------------------------------
 BASE_MODEL = "Qwen/Qwen2.5-14B-Instruct"
 TRAIN_DATA = Path(__file__).parent.parent / "data" / "processed" / "train.jsonl"
@@ -124,7 +124,7 @@ def tokenise_and_mask(example: dict, tokenizer, max_len: int) -> dict:
 # Model loading
 # ---------------------------------------------------------------------------
 
-def load_model_and_tokenizer(model_name: str, dry_run: bool = False):
+def load_model_and_tokenizer(model_name: str):
     """Load quantised base model and tokeniser, then apply LoRA."""
 
     bnb_config = BitsAndBytesConfig(
@@ -140,11 +140,6 @@ def load_model_and_tokenizer(model_name: str, dry_run: bool = False):
     )
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
-
-    if dry_run:
-        # Skip downloading the full 14B model during dry-run
-        print("[DRY-RUN] Skipping model weight download.")
-        return None, tokenizer
 
     print(f"Loading model '{model_name}' in 4-bit …")
     model = AutoModelForCausalLM.from_pretrained(
@@ -196,7 +191,6 @@ def build_training_args(
     grad_accum: int,
     lr: float,
     warmup_ratio: float,
-    dry_run: bool,
 ) -> TrainingArguments:
 
     use_wandb = os.environ.get("WANDB_API_KEY") is not None
@@ -204,7 +198,7 @@ def build_training_args(
 
     return TrainingArguments(
         output_dir=str(output_dir),
-        num_train_epochs=1 if dry_run else num_epochs,
+        num_train_epochs=num_epochs,
         per_device_train_batch_size=batch_size,
         per_device_eval_batch_size=batch_size,
         gradient_accumulation_steps=grad_accum,
@@ -228,7 +222,6 @@ def build_training_args(
         dataloader_num_workers=2,
         remove_unused_columns=False,
         report_to=report_to,
-        max_steps=5 if dry_run else -1,  # 5 steps is enough for a dry-run
         ddp_find_unused_parameters=False,
     )
 
@@ -244,26 +237,9 @@ def main() -> None:
     parser.add_argument("--grad-accum", type=int, default=GRAD_ACCUM)
     parser.add_argument("--lr", type=float, default=LEARNING_RATE)
     parser.add_argument("--max-seq-len", type=int, default=MAX_SEQ_LEN)
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Run 5 training steps only (no model download), to verify no errors.",
-    )
     args = parser.parse_args()
 
-    if args.dry_run:
-        print("=" * 60)
-        print("DRY-RUN MODE — 5 steps only, skipping model download")
-        print("=" * 60)
-
-    num_gpus = torch.cuda.device_count()
-    print(f"Detected {num_gpus} GPU(s).")
-
-    model, tokenizer = load_model_and_tokenizer(args.model, dry_run=args.dry_run)
-
-    if args.dry_run:
-        print("[DRY-RUN] Pipeline checks passed. Exiting without full training.")
-        return
+    model, tokenizer = load_model_and_tokenizer(args.model)
 
     print("Loading and tokenising training data …")
     train_dataset = load_split(args.train_data, tokenizer, args.max_seq_len)
@@ -278,7 +254,6 @@ def main() -> None:
         grad_accum=args.grad_accum,
         lr=args.lr,
         warmup_ratio=WARMUP_RATIO,
-        dry_run=args.dry_run,
     )
 
     data_collator = DataCollatorForSeq2Seq(
@@ -308,3 +283,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
