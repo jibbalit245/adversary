@@ -1,0 +1,62 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+venv/
+.venv/
+env/
+.env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Data / caches
+data/raw/
+data/processed/
+data/convokit_data/
+*.jsonl
+*.json
+!scripts/*.json
+*.parquet
+*.arrow
+*.cache
+
+# Model weights / checkpoints
+checkpoints/
+output/
+runs/
+*.bin
+*.safetensors
+*.gguf
+adapter_model*/
+tokenizer.model
+
+# HuggingFace cache
+~/.cache/huggingface/
+
+# Wandb
+wandb/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
